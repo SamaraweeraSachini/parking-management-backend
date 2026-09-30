@@ -1,0 +1,25 @@
+# Build output
+**/bin/
+**/obj/
+artifacts/
+
+# IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln.docstates
+
+# Logs
+logs/
+*.log
+
+# Local configuration
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.*.Local.json
+
+# Database connection files
+COOPConnections.txt
