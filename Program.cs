@@ -1,16 +1,16 @@
 using System.Security.Claims;
 using System.Text;
-using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
-using ParkingManagement.Helpers;
-
+using Microsoft.Data.SqlClient;
 using ParkingManagement;
 using ParkingManagement.DataAccess;
-using ParkingManagement.Interfaces;
-using ParkingManagement.Middleware;
 using ParkingManagement.Database_Layer;
+using ParkingManagement.Helpers;
+using ParkingManagement.Interfaces;
+using ParkingManagement.Interfaces.VehicleType;
+using ParkingManagement.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
@@ -20,6 +20,7 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddScoped<ISupplierDetails, DASupplierDetails>();
 builder.Services.AddScoped<IUserLogin, DAUserLogin>();
+builder.Services.AddScoped<IVehicleType, DAVehicleType>();
 
 //builder.Services.AddSwaggerGen(c =>
 //{
