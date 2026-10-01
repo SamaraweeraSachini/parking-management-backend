@@ -21,6 +21,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<ISupplierDetails, DASupplierDetails>();
 builder.Services.AddScoped<IUserLogin, DAUserLogin>();
 builder.Services.AddScoped<IVehicleType, DAVehicleType>();
+builder.Services.AddScoped<IUserManagement, DAUserManagement>();
 
 //builder.Services.AddSwaggerGen(c =>
 //{
@@ -113,15 +114,41 @@ builder.Services
 				string storedRole = context.Principal
 					.FindFirstValue(ClaimTypes.Role);
 
-				if (currentUser == null ||
-					currentUser.UserRole != storedRole)
-				{
-					context.RejectPrincipal();
+                if (currentUser == null || currentUser.UserRole != storedRole)
+                {
+                    context.RejectPrincipal();
 
-					await context.HttpContext.SignOutAsync(
-						CookieAuthenticationDefaults.AuthenticationScheme);
-				}
-			}
+                    await context.HttpContext.SignOutAsync(
+                        CookieAuthenticationDefaults.AuthenticationScheme);
+
+                    return;
+                }
+
+                // Refresh identity details after an administrator edits them.
+                if (context.Principal.FindFirstValue(ClaimTypes.Name) != currentUser.Username ||
+                    context.Principal.FindFirstValue("FirstName") != currentUser.FirstName ||
+                    context.Principal.FindFirstValue("LastName") != currentUser.LastName)
+                {
+                    var claims = new List<Claim>
+					{
+						new Claim(
+							ClaimTypes.NameIdentifier,
+							currentUser.UserID.ToString()),
+
+						new Claim(ClaimTypes.Name, currentUser.Username),
+						new Claim(ClaimTypes.Role, currentUser.UserRole),
+						new Claim("FirstName", currentUser.FirstName),
+						new Claim("LastName", currentUser.LastName)
+					};
+
+						context.ReplacePrincipal(new ClaimsPrincipal(
+							new ClaimsIdentity(
+								claims,
+								CookieAuthenticationDefaults.AuthenticationScheme)));
+
+						context.ShouldRenew = true;
+					}
+            }
 			catch (Exception exception)
 			{
 				var logger = context.HttpContext.RequestServices
