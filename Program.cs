@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using ParkingManagement.Helpers;
 
 using ParkingManagement;
@@ -135,7 +136,29 @@ builder.Services
 		};
 	});
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+	options.AddPolicy(
+		ParkingPermissions.AdminOnly,
+		policy => policy
+			.RequireAuthenticatedUser()
+			.RequireRole(ParkingPermissions.AdminRole));
+
+	options.AddPolicy(
+		ParkingPermissions.ParkingOperations,
+		policy => policy
+			.RequireAuthenticatedUser()
+			.RequireRole(
+				ParkingPermissions.AdminRole,
+				ParkingPermissions.OperatorRole));
+
+	// Controllers without explicit authorization metadata
+	// are restricted to administrators by default.
+	options.FallbackPolicy = new AuthorizationPolicyBuilder()
+		.RequireAuthenticatedUser()
+		.RequireRole(ParkingPermissions.AdminRole)
+		.Build();
+});
 
 var app = builder.Build();
 
