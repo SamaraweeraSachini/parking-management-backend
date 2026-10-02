@@ -23,6 +23,7 @@ builder.Services.AddScoped<IUserLogin, DAUserLogin>();
 builder.Services.AddScoped<IUserManagement, DAUserManagement>();
 builder.Services.AddScoped<ISpaceAvailability, DASpaceAvailability>();
 builder.Services.AddScoped<IParkingRate, DAParkingRate>();
+builder.Services.AddScoped<IVehicleEntry, DAVehicleEntry>();
 
 //builder.Services.AddSwaggerGen(c =>
 //{
