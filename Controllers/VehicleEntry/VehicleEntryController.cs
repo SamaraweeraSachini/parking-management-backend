@@ -87,7 +87,7 @@ namespace ParkingManagement.Controllers.VehicleEntry
             {
                 string mobileNumber = request.MobileNumber.Trim();
 
-                if (mobileNumber.Length == 10)
+                if (!System.Text.RegularExpressions.Regex.IsMatch(mobileNumber, @"^[0-9]{10}$"))
                 {
                     return BadRequest(new
                     {
@@ -121,6 +121,50 @@ namespace ParkingManagement.Controllers.VehicleEntry
                     message = "Could not register entry. Check current parking " + "before retrying if the result is uncertain."
                 });
             }
+        }
+
+        [HttpPost("Monthly")]
+        public IActionResult CreateMonthlyEntry([FromBody] MonthlyEntryRequestAPI request)
+            {
+                if (string.IsNullOrWhiteSpace(request.VehicleNumber))
+                {
+                    return BadRequest(new
+                    {
+                        message = "Vehicle number is required."
+                    });
+                }
+
+                if (!int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out int operatorUserId) || operatorUserId <= 0)
+                {
+                    return Unauthorized();
+                }
+
+                try
+                {
+                    var result = _vehicleEntry.CreateMonthlyEntry(request, operatorUserId);
+
+                    return StatusCode(result.StatusCode, new
+                    {
+                        message = result.Message,
+                        ticketID = result.TicketID,
+                        ticketNumber = result.TicketNumber,
+                        vehicleNumber = result.VehicleNumber,
+                        spaceID = result.SpaceID,
+                        entryDateTime = result.EntryDateTime,
+                        parkingType = "MONTHLY",
+                        contractID = result.ContractID,
+                        contractNumber = result.ContractNumber
+                    });
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogError(exception, "Could not register monthly vehicle entry.");
+
+                    return StatusCode(500, new
+                    {
+                        message = "Could not register entry. Check current parking " + "before retrying if the result is uncertain."
+                    });
+                }
         }
     }
 }
