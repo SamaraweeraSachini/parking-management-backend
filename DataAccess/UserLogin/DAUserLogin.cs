@@ -1,8 +1,9 @@
-﻿using System.Data;
-using Microsoft.Data.SqlClient;
+﻿using System;
+using System.Data;
 using ParkingManagement.Database_Layer;
 using ParkingManagement.Interfaces;
 using ParkingManagement.Models;
+using ParkingManagement.Static;
 
 namespace ParkingManagement.DataAccess
 {
@@ -12,52 +13,54 @@ namespace ParkingManagement.DataAccess
 
         public UserLoginModel FindActiveUser(string username)
         {
-            using var database = new DBconnect("PARKING");
-            using var connection = database.GetOpenConnection();
+            UserProcedureRequestAPI requestAPI = new UserProcedureRequestAPI
+                {
+                    ActionType = 1,
+                    Username = username
+                };
 
-            using var command = new SqlCommand(ProcedureName, connection)
+            using (var dbConnect = new DBconnect("PARKING"))
             {
-                CommandType = CommandType.StoredProcedure
-            };
+                ProcedureDBModel res = dbConnect.ProcedureRead(requestAPI, ProcedureName);
 
-            command.Parameters.Add(
-                "@ActionType", SqlDbType.Int).Value = 1;
+                EnsureProcedureSucceeded(res, nameof(FindActiveUser));
 
-            command.Parameters.Add(
-                "@Username", SqlDbType.NVarChar, 100).Value = username;
+                if (res.ResultDataTable == null || res.ResultDataTable.Rows.Count == 0)
+                {
+                    return null;
+                }
 
-            using var reader = command.ExecuteReader();
+                UserLoginModel user = MapUser(res.ResultDataTable.Rows[0], includePasswordHash: true);
 
-            if (!reader.Read())
-                return null;
-
-            return MapUser(reader, includePasswordHash: true);
+                return user.ActiveStatus ? user : null;
+            }
         }
 
         public UserLoginModel FindActiveUserById(int userId)
         {
-            using var database = new DBconnect("PARKING");
-            using var connection = database.GetOpenConnection();
+            UserProcedureRequestAPI requestAPI = new UserProcedureRequestAPI
+                {
+                    ActionType = 4,
+                    UserID = userId
+                };
 
-            using var command = new SqlCommand(ProcedureName, connection)
+            using (var dbConnect = new DBconnect("PARKING"))
             {
-                CommandType = CommandType.StoredProcedure
-            };
+                ProcedureDBModel res = dbConnect.ProcedureRead(requestAPI, ProcedureName);
 
-            command.Parameters.Add(
-                "@ActionType", SqlDbType.Int).Value = 4;
+                EnsureProcedureSucceeded(res, nameof(FindActiveUserById));
 
-            command.Parameters.Add(
-                "@UserID", SqlDbType.Int).Value = userId;
+                if (res.ResultDataTable == null || res.ResultDataTable.Rows.Count == 0)
+                {
+                    return null;
+                }
 
-            using var reader = command.ExecuteReader();
+                UserLoginModel user = MapUser(
+                        res.ResultDataTable.Rows[0],
+                        includePasswordHash: false);
 
-            if (!reader.Read())
-                return null;
-
-            var user = MapUser(reader, includePasswordHash: false);
-
-            return user.ActiveStatus ? user : null;
+                return user.ActiveStatus ? user : null;
+            }
         }
 
         public int CreateFirstAdmin(
@@ -66,67 +69,79 @@ namespace ParkingManagement.DataAccess
             string username,
             string passwordHash)
         {
-            using var database = new DBconnect("PARKING");
-            using var connection = database.GetOpenConnection();
+            UserProcedureRequestAPI requestAPI = new UserProcedureRequestAPI
+                {
+                    ActionType = 2,
+                    FirstName = firstName,
+                    LastName = lastName,
+                    Username = username,
+                    PasswordHash = passwordHash,
+                    UserRole = "A"
+                };
 
-            using var command = new SqlCommand(ProcedureName, connection)
+            using (var dbConnect = new DBconnect("PARKING"))
             {
-                CommandType = CommandType.StoredProcedure
-            };
+                ProcedureDBModel res = dbConnect.ProcedureRead(requestAPI, ProcedureName);
 
-            command.Parameters.Add(
-                "@ActionType", SqlDbType.Int).Value = 2;
+                EnsureProcedureSucceeded(res, nameof(CreateFirstAdmin));
 
-            command.Parameters.Add(
-                "@FirstName", SqlDbType.NVarChar, 100).Value = firstName;
+                if (res.ResultDataTable == null || res.ResultDataTable.Rows.Count == 0)
+                {
+                    throw new InvalidOperationException("The user procedure returned no result.");
+                }
 
-            command.Parameters.Add(
-                "@LastName", SqlDbType.NVarChar, 100).Value = lastName;
+                DataRow row = res.ResultDataTable.Rows[0];
 
-            command.Parameters.Add(
-                "@Username", SqlDbType.NVarChar, 100).Value = username;
+                if (Convert.ToInt32(row["StatusCode"]) != 201)
+                {
+                    throw new InvalidOperationException(row["Message"].ToString());
+                }
 
-            command.Parameters.Add(
-                "@PasswordHash", SqlDbType.NVarChar, 500).Value = passwordHash;
-
-            command.Parameters.Add(
-                "@UserRole", SqlDbType.Char, 1).Value = "A";
-
-            using var reader = command.ExecuteReader();
-
-            if (!reader.Read())
-            {
-                throw new InvalidOperationException(
-                    "The user procedure returned no result.");
+                return Convert.ToInt32(row["UserID"]);
             }
-
-            int statusCode =
-                Convert.ToInt32(reader["StatusCode"]);
-
-            if (statusCode != 201)
-            {
-                throw new InvalidOperationException(
-                    reader["Message"].ToString());
-            }
-
-            return Convert.ToInt32(reader["UserID"]);
         }
 
-        private static UserLoginModel MapUser(
-            SqlDataReader reader,
-            bool includePasswordHash)
+        private static void EnsureProcedureSucceeded(ProcedureDBModel result, string methodName)
+        {
+            if (result.ResultStatusCode == "1")
+            {
+                return;
+            }
+
+            string message = result.Result;
+
+            // Preserve the procedure's detailed validation message.
+            if (result.ResultDataTable != null &&
+                result.ResultDataTable.Rows.Count > 0 &&
+                result.ResultDataTable.Columns.Contains("Message"))
+            {
+                message = result.ResultDataTable.Rows[0]["Message"].ToString();
+            }
+
+            LogHandler.WriteToLog(
+                result.ExceptionMessage,
+                message,
+                methodName);
+
+            throw new InvalidOperationException(
+                string.IsNullOrWhiteSpace(message)
+                    ? "The user database operation failed."
+                    : message);
+        }
+
+        private static UserLoginModel MapUser(DataRow row, bool includePasswordHash)
         {
             return new UserLoginModel
             {
-                UserID = Convert.ToInt32(reader["UserID"]),
-                FirstName = reader["FirstName"].ToString(),
-                LastName = reader["LastName"].ToString(),
-                Username = reader["Username"].ToString(),
-                UserRole = reader["UserRole"].ToString().Trim(),
-                ActiveStatus = Convert.ToBoolean(reader["ActiveStatus"]),
+                UserID = Convert.ToInt32(row["UserID"]),
+                FirstName = row["FirstName"].ToString(),
+                LastName = row["LastName"].ToString(),
+                Username = row["Username"].ToString(),
+                UserRole = row["UserRole"].ToString().Trim(),
+                ActiveStatus = Convert.ToBoolean(row["ActiveStatus"]),
 
                 PasswordHash = includePasswordHash
-                    ? reader["PasswordHash"].ToString()
+                    ? row["PasswordHash"].ToString()
                     : ""
             };
         }
