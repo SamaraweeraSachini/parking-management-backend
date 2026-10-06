@@ -24,4 +24,10 @@
         public int? SpaceID { get; set; }
         public DateTime? EntryDateTime { get; set; }
     }
+
+    public class MonthlyEntryResult : DailyEntryResult
+    {
+        public int? ContractID { get; set; }
+        public string ContractNumber { get; set; } = "";
+    }
 }

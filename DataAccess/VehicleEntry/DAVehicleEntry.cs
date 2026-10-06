@@ -143,5 +143,109 @@ namespace ParkingManagement.DataAccess
                 };
             }
         }
+
+        public MonthlyEntryResult CreateMonthlyEntry(
+    MonthlyEntryRequestAPI request,
+    int operatorUserId)
+        {
+            using var database = new DBconnect("PARKING");
+            using var connection = database.GetOpenConnection();
+
+            using var command = new SqlCommand(
+                "dbo.PARKING_SP_Monthly_Attendance", connection)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+
+            command.Parameters.Add(
+                "@ActionType", SqlDbType.Int).Value = 3;
+
+            command.Parameters.Add(
+                "@VehicleNumber", SqlDbType.VarChar, 30).Value =
+                request.VehicleNumber.Trim().ToUpperInvariant();
+
+            command.Parameters.Add(
+                "@ExpectedVehicleTypeID", SqlDbType.Int).Value =
+                request.VehicleTypeID;
+
+            command.Parameters.Add(
+                "@SpaceID", SqlDbType.Int).Value =
+                request.SpaceID.HasValue
+                    ? (object)request.SpaceID.Value
+                    : DBNull.Value;
+
+            command.Parameters.Add(
+                "@PerformedByUserID", SqlDbType.Int).Value =
+                operatorUserId;
+
+            try
+            {
+                using var reader = command.ExecuteReader();
+
+                if (!reader.Read())
+                {
+                    throw new InvalidOperationException(
+                        "Monthly entry returned no result.");
+                }
+
+                int statusCode = Convert.ToInt32(reader["StatusCode"]);
+
+                var result = new MonthlyEntryResult
+                {
+                    StatusCode = statusCode,
+                    Message = reader["Message"].ToString() ?? ""
+                };
+
+                if (statusCode == 201)
+                {
+                    result.TicketID =
+                        Convert.ToInt32(reader["TicketID"]);
+
+                    result.TicketNumber =
+                        reader["TicketNumber"].ToString() ?? "";
+
+                    result.VehicleNumber =
+                        reader["VehicleNumber"].ToString() ?? "";
+
+                    result.SpaceID =
+                        Convert.ToInt32(reader["SpaceID"]);
+
+                    result.EntryDateTime = DateTime.SpecifyKind(
+                        Convert.ToDateTime(reader["EntryDateTime"]),
+                        DateTimeKind.Utc);
+
+                    result.ContractID =
+                        Convert.ToInt32(reader["ContractID"]);
+
+                    result.ContractNumber =
+                        reader["ContractNumber"].ToString() ?? "";
+                }
+
+                return result;
+            }
+            catch (SqlException exception)
+                when (exception.Number == 2601 || exception.Number == 2627)
+            {
+                return new MonthlyEntryResult
+                {
+                    StatusCode = 409,
+                    Message =
+                        "A conflicting parking record already exists. " +
+                        "Check current parking before trying again."
+                };
+            }
+            catch (SqlException exception) when (exception.Number == 1205)
+            {
+                return new MonthlyEntryResult
+                {
+                    StatusCode = 409,
+                    Message =
+                        "Another parking transaction was processed at the same time. " +
+                        "Refresh availability and try again."
+                };
+            }
+        }
+
     }
+
 }
