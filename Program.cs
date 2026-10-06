@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using ParkingManagement.Helpers;
-
 using ParkingManagement;
 using ParkingManagement.DataAccess;
 using ParkingManagement.Interfaces;
@@ -13,12 +12,13 @@ using ParkingManagement.Middleware;
 using ParkingManagement.Database_Layer;
 
 var builder = WebApplication.CreateBuilder(args);
+
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddScoped<ISupplierDetails, DASupplierDetails>();
+//builder.Services.AddScoped<ISupplierDetails, DASupplierDetails>();
 builder.Services.AddScoped<IUserLogin, DAUserLogin>();
 builder.Services.AddScoped<IUserManagement, DAUserManagement>();
 builder.Services.AddScoped<ISpaceAvailability, DASpaceAvailability>();
@@ -64,9 +64,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services
-	.AddAuthentication(
-		CookieAuthenticationDefaults.AuthenticationScheme)
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
 	.AddCookie(options =>
 	{
 		options.Cookie.Name = "ParkingManagement.Auth";
@@ -157,38 +155,36 @@ builder.Services
 					.GetRequiredService<ILoggerFactory>()
 					.CreateLogger("ParkingAuthentication");
 
-				logger.LogError(
-					exception,
-					"Could not validate parking session");
+				logger.LogError(exception, "Could not validate parking session");
 
 				context.RejectPrincipal();
 			}
 		};
 	});
 
-builder.Services.AddAuthorization(options =>
-{
-	options.AddPolicy(
-		ParkingPermissions.AdminOnly,
-		policy => policy
-			.RequireAuthenticatedUser()
-			.RequireRole(ParkingPermissions.AdminRole));
+	builder.Services.AddAuthorization(options =>
+	{
+		options.AddPolicy(
+			ParkingPermissions.AdminOnly,
+			policy => policy
+				.RequireAuthenticatedUser()
+				.RequireRole(ParkingPermissions.AdminRole));
 
-	options.AddPolicy(
-		ParkingPermissions.ParkingOperations,
-		policy => policy
-			.RequireAuthenticatedUser()
-			.RequireRole(
-				ParkingPermissions.AdminRole,
-				ParkingPermissions.OperatorRole));
+		options.AddPolicy(
+			ParkingPermissions.ParkingOperations,
+			policy => policy
+				.RequireAuthenticatedUser()
+				.RequireRole(
+					ParkingPermissions.AdminRole,
+					ParkingPermissions.OperatorRole));
 
-	// Controllers without explicit authorization metadata
-	// are restricted to administrators by default.
-	options.FallbackPolicy = new AuthorizationPolicyBuilder()
-		.RequireAuthenticatedUser()
-		.RequireRole(ParkingPermissions.AdminRole)
-		.Build();
-});
+		// Controllers without explicit authorization metadata
+		// are restricted to administrators by default.
+		options.FallbackPolicy = new AuthorizationPolicyBuilder()
+			.RequireAuthenticatedUser()
+			.RequireRole(ParkingPermissions.AdminRole)
+			.Build();
+	});
 
 var app = builder.Build();
 
