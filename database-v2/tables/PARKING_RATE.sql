@@ -1,0 +1,72 @@
+USE [VehicleParkingManagementDB_V2];
+GO
+
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET ARITHABORT ON;
+SET NUMERIC_ROUNDABORT OFF;
+GO
+
+CREATE TABLE dbo.PARKING_RATE
+(
+    RateID INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_PARKING_RATE PRIMARY KEY,
+
+    VehicleTypeID INT NOT NULL,
+    RateName NVARCHAR(100) NOT NULL,
+    RateAmount DECIMAL(12,2) NOT NULL,
+    RateUnit VARCHAR(20) NOT NULL,
+
+    EffectiveFrom DATETIME2(0) NOT NULL
+        CONSTRAINT DF_PARKING_RATE_From
+        DEFAULT (SYSUTCDATETIME()),
+
+    EffectiveTo DATETIME2(0) NULL,
+
+    ActiveStatus BIT NOT NULL
+        CONSTRAINT DF_PARKING_RATE_Active DEFAULT (1),
+
+    CreatedAt DATETIME2(0) NOT NULL
+        CONSTRAINT DF_PARKING_RATE_CreatedAt
+        DEFAULT (SYSUTCDATETIME()),
+
+    CreatedBy INT NULL,
+    UpdatedAt DATETIME2(0) NULL,
+    UpdatedBy INT NULL,
+
+    CONSTRAINT CK_PARKING_RATE_Name
+        CHECK (LEN(LTRIM(RTRIM(RateName))) > 0),
+
+    CONSTRAINT CK_PARKING_RATE_Amount
+        CHECK (RateAmount >= 0),
+
+    CONSTRAINT CK_PARKING_RATE_Unit
+        CHECK (RateUnit IN ('HOURLY', 'DAILY', 'MONTHLY')),
+
+    CONSTRAINT CK_PARKING_RATE_Period
+        CHECK
+        (
+            EffectiveTo IS NULL
+            OR EffectiveTo > EffectiveFrom
+        ),
+
+    CONSTRAINT FK_PARKING_RATE_VehicleType
+        FOREIGN KEY (VehicleTypeID)
+        REFERENCES dbo.PARKING_VEHICLE_TYPE(VehicleTypeID),
+
+    CONSTRAINT FK_PARKING_RATE_CreatedBy
+        FOREIGN KEY (CreatedBy)
+        REFERENCES dbo.PARKING_USER(UserID),
+
+    CONSTRAINT FK_PARKING_RATE_UpdatedBy
+        FOREIGN KEY (UpdatedBy)
+        REFERENCES dbo.PARKING_USER(UserID)
+);
+GO
+
+CREATE UNIQUE INDEX UX_PARKING_RATE_ActiveTypeUnit
+    ON dbo.PARKING_RATE(VehicleTypeID, RateUnit)
+    WHERE ActiveStatus = 1;
+GO

@@ -1,0 +1,110 @@
+USE [VehicleParkingManagementDB_V2];
+GO
+
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET ARITHABORT ON;
+SET NUMERIC_ROUNDABORT OFF;
+GO
+
+CREATE TABLE dbo.PARKING_MONTHLY_PAYMENT
+(
+    MonthlyPaymentID INT IDENTITY(1,1) NOT NULL
+        CONSTRAINT PK_PARKING_MONTHLY_PAYMENT PRIMARY KEY,
+
+    PaymentNumber VARCHAR(40) NOT NULL
+        CONSTRAINT UQ_PARKING_MONTHLY_PAYMENT_Number UNIQUE,
+
+    ContractID INT NOT NULL,
+    PeriodStartDate DATE NOT NULL,
+    PeriodEndDate DATE NOT NULL,
+
+    Amount DECIMAL(12,2) NOT NULL,
+    PaymentMethod VARCHAR(20) NOT NULL,
+
+    PaymentStatus VARCHAR(20) NOT NULL
+        CONSTRAINT DF_PARKING_MONTHLY_PAYMENT_Status
+        DEFAULT ('COMPLETED'),
+
+    PaymentDateTime DATETIME2(0) NOT NULL
+        CONSTRAINT DF_PARKING_MONTHLY_PAYMENT_Date
+        DEFAULT (SYSUTCDATETIME()),
+
+    ReceivedByUserID INT NOT NULL,
+
+    ReceiptNumber VARCHAR(40) NOT NULL
+        CONSTRAINT UQ_PARKING_MONTHLY_PAYMENT_Receipt UNIQUE,
+
+    Remarks NVARCHAR(500) NULL,
+
+    CreatedAt DATETIME2(0) NOT NULL
+        CONSTRAINT DF_PARKING_MONTHLY_PAYMENT_CreatedAt
+        DEFAULT (SYSUTCDATETIME()),
+
+    CreatedBy INT NULL,
+    UpdatedAt DATETIME2(0) NULL,
+    UpdatedBy INT NULL,
+
+    CONSTRAINT CK_PARKING_MONTHLY_PAYMENT_Period
+        CHECK (PeriodEndDate >= PeriodStartDate),
+
+    CONSTRAINT CK_PARKING_MONTHLY_PAYMENT_Amount
+        CHECK (Amount >= 0),
+
+    CONSTRAINT CK_PARKING_MONTHLY_PAYMENT_Method
+        CHECK (PaymentMethod IN ('CASH', 'CARD')),
+
+    CONSTRAINT CK_PARKING_MONTHLY_PAYMENT_Status
+        CHECK
+        (
+            PaymentStatus IN ('COMPLETED', 'CANCELLED', 'REFUNDED')
+        ),
+
+    CONSTRAINT FK_PARKING_MONTHLY_PAYMENT_Contract
+        FOREIGN KEY (ContractID)
+        REFERENCES dbo.PARKING_MONTHLY_CONTRACT(ContractID),
+
+    CONSTRAINT FK_PARKING_MONTHLY_PAYMENT_Operator
+        FOREIGN KEY (ReceivedByUserID)
+        REFERENCES dbo.PARKING_USER(UserID),
+
+    CONSTRAINT FK_PARKING_MONTHLY_PAYMENT_CreatedBy
+        FOREIGN KEY (CreatedBy)
+        REFERENCES dbo.PARKING_USER(UserID),
+
+    CONSTRAINT FK_PARKING_MONTHLY_PAYMENT_UpdatedBy
+        FOREIGN KEY (UpdatedBy)
+        REFERENCES dbo.PARKING_USER(UserID)
+);
+GO
+
+CREATE UNIQUE INDEX UX_PARKING_MONTHLY_PAYMENT_CompletedPeriod
+    ON dbo.PARKING_MONTHLY_PAYMENT
+    (
+        ContractID,
+        PeriodStartDate,
+        PeriodEndDate
+    )
+    WHERE PaymentStatus = 'COMPLETED';
+GO
+
+CREATE INDEX IX_PARKING_MONTHLY_PAYMENT_Coverage
+    ON dbo.PARKING_MONTHLY_PAYMENT
+    (
+        ContractID,
+        PaymentStatus,
+        PeriodStartDate,
+        PeriodEndDate
+    );
+GO
+
+CREATE INDEX IX_PARKING_MONTHLY_PAYMENT_Date
+    ON dbo.PARKING_MONTHLY_PAYMENT
+    (
+        PaymentDateTime,
+        PaymentStatus
+    );
+GO
