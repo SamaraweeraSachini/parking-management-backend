@@ -244,8 +244,7 @@ BEGIN
                         WHERE VehicleTypeID = @p_vehicleTypeID
                     )
                 )
-                    SET @ValidationMessage =
-                        'A vehicle type already referenced by spaces, rates or vehicles cannot change its wheel category';
+                    SET @ValidationMessage = 'A vehicle type already referenced by spaces, rates or vehicles cannot change its wheel category';
             END;
 
             IF @ValidationMessage IS NOT NULL
@@ -348,8 +347,7 @@ BEGIN
                         WHERE VehicleTypeID = @p_vehicleTypeID AND ActiveStatus = 1
                     )
                 )
-                    SET @ValidationMessage =
-                        'Deactivate the active spaces, rates and vehicles before deactivating this vehicle type';
+                    SET @ValidationMessage = 'Deactivate the active spaces, rates and vehicles before deactivating this vehicle type';
             END;
 
             IF @ValidationMessage IS NOT NULL
