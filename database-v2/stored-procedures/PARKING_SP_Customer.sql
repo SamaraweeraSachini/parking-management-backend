@@ -1,6 +1,5 @@
 USE [VehicleParkingManagementDB_V2];
 GO
-
 SET ANSI_NULLS ON;
 GO
 SET QUOTED_IDENTIFIER ON;
@@ -28,7 +27,6 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
-
     DECLARE @StartedTransaction BIT = 0;
 
     BEGIN TRY
@@ -36,69 +34,22 @@ BEGIN
         SET @Result = '';
         SET @ExceptionMessage = '';
 
-        SET @p_customerName =
-            NULLIF(LTRIM(RTRIM(@p_customerName)), N'');
-
-        SET @p_mobileNumber =
-            NULLIF(LTRIM(RTRIM(@p_mobileNumber)), '');
-
-        SET @p_emailAddress =
-            NULLIF(LTRIM(RTRIM(@p_emailAddress)), N'');
-
-        SET @p_address =
-            NULLIF(LTRIM(RTRIM(@p_address)), N'');
-
-        SET @p_searchTerm =
-            NULLIF(LTRIM(RTRIM(@p_searchTerm)), N'');
-
+        SET @p_customerName = NULLIF(LTRIM(RTRIM(@p_customerName)), N'');
+        SET @p_mobileNumber = NULLIF(LTRIM(RTRIM(@p_mobileNumber)), '');
+        SET @p_emailAddress = NULLIF(LTRIM(RTRIM(@p_emailAddress)), N'');
+        SET @p_address = NULLIF(LTRIM(RTRIM(@p_address)), N'');
+        SET @p_searchTerm = NULLIF(LTRIM(RTRIM(@p_searchTerm)), N'');
         SET @p_includeInactive = ISNULL(@p_includeInactive, 0);
 
-        /* ============================================================
-           Shared Input Validation
-           ============================================================ */
+        DECLARE @LockResult INT, @Now DATETIME2(0);
 
-        DECLARE @ValidationMessage VARCHAR(500);
-
-        IF @ActionType IS NULL OR @ActionType NOT BETWEEN 1 AND 5
-            SET @ValidationMessage = 'Invalid action type';
-
-        ELSE IF @ActionType IN (2, 4, 5)
-             AND (@p_customerID IS NULL OR @p_customerID <= 0)
-            SET @ValidationMessage = 'A valid customer ID is required';
-
-        ELSE IF @ActionType IN (3, 4)
-             AND
-             (
-                 @p_customerName IS NULL
-                 OR @p_mobileNumber IS NULL
-                 OR LEN(@p_mobileNumber) NOT BETWEEN 7 AND 20
-             )
-            SET @ValidationMessage =
-                'Customer name and a mobile number of 7-20 characters are required';
-
-        ELSE IF @ActionType = 5 AND @p_isActive IS NULL
-            SET @ValidationMessage = 'Active status is required';
-
-        IF @ValidationMessage IS NOT NULL
-        BEGIN
-            SET @ResultStatusCode = -1;
-            SET @Result = @ValidationMessage;
-            RETURN;
-        END;
-
-        /* ============================================================
-           1. Get / Search Customers
-           2. Get Customer By ID
-           ============================================================ */
-
-        IF @ActionType IN (1, 2)
+        /* 1. Get Customers */
+        IF @ActionType = 1
         BEGIN
             IF NOT EXISTS
             (
-                SELECT 1
-                FROM dbo.PARKING_USER
-                WHERE UserID = @p_uid
-                  AND ActiveStatus = 1
+                SELECT 1 FROM dbo.PARKING_USER
+                WHERE UserID = @p_uid AND ActiveStatus = 1
             )
             BEGIN
                 SET @ResultStatusCode = -1;
@@ -107,49 +58,52 @@ BEGIN
             END;
 
             SELECT
-                CustomerID,
-                CustomerName,
-                MobileNumber,
-                EmailAddress,
-                Address,
-                RegisteredDate,
-                ActiveStatus,
-                CreatedAt,
-                CreatedBy,
-                UpdatedAt,
-                UpdatedBy
+                CustomerID, CustomerName, MobileNumber,
+                EmailAddress, Address, RegisteredDate, ActiveStatus,
+                CreatedAt, CreatedBy, UpdatedAt, UpdatedBy
             FROM dbo.PARKING_CUSTOMER
-            WHERE
-                (
-                    @ActionType = 1
-                    AND
-                    (
-                        @p_includeInactive = 1
-                        OR ActiveStatus = 1
-                    )
-                    AND
-                    (
-                        @p_searchTerm IS NULL
-                        OR CHARINDEX
-                           (
-                               UPPER(@p_searchTerm),
-                               UPPER(CustomerName)
-                           ) > 0
-                        OR CHARINDEX
-                           (
-                               @p_searchTerm,
-                               MobileNumber
-                           ) > 0
-                    )
-                )
-                OR
-                (
-                    @ActionType = 2
-                    AND CustomerID = @p_customerID
-                )
+            WHERE (@p_includeInactive = 1 OR ActiveStatus = 1)
+              AND
+              (
+                  @p_searchTerm IS NULL
+                  OR CHARINDEX(UPPER(@p_searchTerm), UPPER(CustomerName)) > 0
+                  OR CHARINDEX(@p_searchTerm, MobileNumber) > 0
+              )
             ORDER BY CustomerName, CustomerID;
 
-            IF @@ROWCOUNT = 0 AND @ActionType = 2
+            SET @ResultStatusCode = 1;
+            SET @Result = 'Customer details retrieved successfully';
+        END
+
+        /* 2. Get Customer By ID */
+        ELSE IF @ActionType = 2
+        BEGIN
+            IF @p_customerID IS NULL OR @p_customerID <= 0
+            BEGIN
+                SET @ResultStatusCode = -1;
+                SET @Result = 'A valid customer ID is required';
+                RETURN;
+            END;
+
+            IF NOT EXISTS
+            (
+                SELECT 1 FROM dbo.PARKING_USER
+                WHERE UserID = @p_uid AND ActiveStatus = 1
+            )
+            BEGIN
+                SET @ResultStatusCode = -1;
+                SET @Result = 'An authenticated active user is required';
+                RETURN;
+            END;
+
+            SELECT
+                CustomerID, CustomerName, MobileNumber,
+                EmailAddress, Address, RegisteredDate, ActiveStatus,
+                CreatedAt, CreatedBy, UpdatedAt, UpdatedBy
+            FROM dbo.PARKING_CUSTOMER
+            WHERE CustomerID = @p_customerID;
+
+            IF @@ROWCOUNT = 0
             BEGIN
                 SET @ResultStatusCode = -1;
                 SET @Result = 'Customer was not found';
@@ -158,144 +112,138 @@ BEGIN
 
             SET @ResultStatusCode = 1;
             SET @Result = 'Customer details retrieved successfully';
-            RETURN;
-        END;
+        END
 
-        /* ============================================================
-           Shared Validation For Write Operations
-           ============================================================ */
-
-        IF @@TRANCOUNT <> 0
+        /* 3. Create Customer */
+        ELSE IF @ActionType = 3
         BEGIN
-            SET @ResultStatusCode = -1;
-            SET @Result =
-                'Call this procedure without an existing transaction';
-            RETURN;
-        END;
+            IF @p_customerName IS NULL OR @p_mobileNumber IS NULL
+               OR LEN(@p_mobileNumber) NOT BETWEEN 7 AND 20
+            BEGIN
+                SET @ResultStatusCode = -1;
+                SET @Result =
+                    'Customer name and a mobile number of 7-20 characters are required';
+                RETURN;
+            END;
 
-        BEGIN TRANSACTION;
-        SET @StartedTransaction = 1;
+            IF @@TRANCOUNT <> 0
+            BEGIN
+                SET @ResultStatusCode = -1;
+                SET @Result = 'Call this procedure without an existing transaction';
+                RETURN;
+            END;
 
-        DECLARE @LockResult INT;
+            BEGIN TRANSACTION;
+            SET @StartedTransaction = 1;
+            EXEC @LockResult = sys.sp_getapplock
+                @Resource = N'ParkingV2Configuration',
+                @LockMode = N'Exclusive',
+                @LockOwner = N'Transaction',
+                @LockTimeout = 10000;
 
-        EXEC @LockResult = sys.sp_getapplock
-            @Resource = N'ParkingV2Configuration',
-            @LockMode = N'Exclusive',
-            @LockOwner = N'Transaction',
-            @LockTimeout = 10000;
+            IF @LockResult < 0
+            BEGIN
+                ROLLBACK TRANSACTION;
+                SET @StartedTransaction = 0;
+                SET @ResultStatusCode = -1;
+                SET @Result = 'Customer management is busy. Please retry';
+                RETURN;
+            END;
 
-        IF @LockResult < 0
-        BEGIN
-            ROLLBACK TRANSACTION;
-            SET @StartedTransaction = 0;
-
-            SET @ResultStatusCode = -1;
-            SET @Result = 'Customer management is busy. Please retry';
-            RETURN;
-        END;
-
-        IF NOT EXISTS
-        (
-            SELECT 1
-            FROM dbo.PARKING_USER WITH (HOLDLOCK)
-            WHERE UserID = @p_uid
-              AND UserRole = 'A'
-              AND ActiveStatus = 1
-        )
-        BEGIN
-            ROLLBACK TRANSACTION;
-            SET @StartedTransaction = 0;
-
-            SET @ResultStatusCode = -1;
-            SET @Result = 'An active administrator is required';
-            RETURN;
-        END;
-
-        SET @ValidationMessage = NULL;
-
-        IF @ActionType IN (4, 5)
-           AND NOT EXISTS
-           (
-               SELECT 1
-               FROM dbo.PARKING_CUSTOMER WITH (UPDLOCK, HOLDLOCK)
-               WHERE CustomerID = @p_customerID
-           )
-            SET @ValidationMessage = 'Customer was not found';
-
-        IF @ValidationMessage IS NULL
-           AND @ActionType = 5
-           AND @p_isActive = 0
-        BEGIN
-            IF EXISTS
+            IF NOT EXISTS
             (
-                SELECT 1
-                FROM dbo.PARKING_CUSTOMER_VEHICLE
-                WHERE CustomerID = @p_customerID
-                  AND ActiveStatus = 1
+                SELECT 1 FROM dbo.PARKING_USER WITH (HOLDLOCK)
+                WHERE UserID = @p_uid
+                  AND UserRole = 'A' AND ActiveStatus = 1
             )
-            OR EXISTS
-            (
-                SELECT 1
-                FROM dbo.PARKING_MONTHLY_CONTRACT
-                WHERE CustomerID = @p_customerID
-                  AND ContractStatus = 'ACTIVE'
-            )
-                SET @ValidationMessage =
-                    'Deactivate the customer vehicles and resolve active monthly contracts before deactivating this customer';
-        END;
+            BEGIN
+                ROLLBACK TRANSACTION;
+                SET @StartedTransaction = 0;
+                SET @ResultStatusCode = -1;
+                SET @Result = 'An active administrator is required';
+                RETURN;
+            END;
 
-        IF @ValidationMessage IS NOT NULL
-        BEGIN
-            ROLLBACK TRANSACTION;
-            SET @StartedTransaction = 0;
-
-            SET @ResultStatusCode = -1;
-            SET @Result = @ValidationMessage;
-            RETURN;
-        END;
-
-        DECLARE @Now DATETIME2(0) = SYSUTCDATETIME();
-
-        /* ============================================================
-           3. Create Customer
-           ============================================================ */
-
-        IF @ActionType = 3
-        BEGIN
+            SET @Now = SYSUTCDATETIME();
             INSERT INTO dbo.PARKING_CUSTOMER
             (
-                CustomerName,
-                MobileNumber,
-                EmailAddress,
-                Address,
-                RegisteredDate,
-                CreatedAt,
-                CreatedBy
+                CustomerName, MobileNumber, EmailAddress, Address,
+                RegisteredDate, CreatedAt, CreatedBy
             )
             VALUES
             (
-                @p_customerName,
-                @p_mobileNumber,
-                @p_emailAddress,
-                @p_address,
-                @Now,
-                @Now,
-                @p_uid
+                @p_customerName, @p_mobileNumber, @p_emailAddress,
+                @p_address, @Now, @Now, @p_uid
             );
 
             SET @p_customerID = CONVERT(INT, SCOPE_IDENTITY());
+            COMMIT TRANSACTION;
+            SET @StartedTransaction = 0;
+            SET @ResultStatusCode = 1;
             SET @Result = 'Customer created successfully';
+            SELECT @p_customerID AS CustomerID;
         END
 
-        /* ============================================================
-           4. Update Customer
-           ============================================================ */
-
+        /* 4. Update Customer */
         ELSE IF @ActionType = 4
         BEGIN
+            IF @p_customerID IS NULL OR @p_customerID <= 0
+            BEGIN
+                SET @ResultStatusCode = -1;
+                SET @Result = 'A valid customer ID is required';
+                RETURN;
+            END;
+
+            IF @p_customerName IS NULL OR @p_mobileNumber IS NULL
+               OR LEN(@p_mobileNumber) NOT BETWEEN 7 AND 20
+            BEGIN
+                SET @ResultStatusCode = -1;
+                SET @Result =
+                    'Customer name and a mobile number of 7-20 characters are required';
+                RETURN;
+            END;
+
+            IF @@TRANCOUNT <> 0
+            BEGIN
+                SET @ResultStatusCode = -1;
+                SET @Result = 'Call this procedure without an existing transaction';
+                RETURN;
+            END;
+
+            BEGIN TRANSACTION;
+            SET @StartedTransaction = 1;
+            EXEC @LockResult = sys.sp_getapplock
+                @Resource = N'ParkingV2Configuration',
+                @LockMode = N'Exclusive',
+                @LockOwner = N'Transaction',
+                @LockTimeout = 10000;
+
+            IF @LockResult < 0
+            BEGIN
+                ROLLBACK TRANSACTION;
+                SET @StartedTransaction = 0;
+                SET @ResultStatusCode = -1;
+                SET @Result = 'Customer management is busy. Please retry';
+                RETURN;
+            END;
+
+            IF NOT EXISTS
+            (
+                SELECT 1 FROM dbo.PARKING_USER WITH (HOLDLOCK)
+                WHERE UserID = @p_uid
+                  AND UserRole = 'A' AND ActiveStatus = 1
+            )
+            BEGIN
+                ROLLBACK TRANSACTION;
+                SET @StartedTransaction = 0;
+                SET @ResultStatusCode = -1;
+                SET @Result = 'An active administrator is required';
+                RETURN;
+            END;
+
+            SET @Now = SYSUTCDATETIME();
             UPDATE dbo.PARKING_CUSTOMER
-            SET
-                CustomerName = @p_customerName,
+            SET CustomerName = @p_customerName,
                 MobileNumber = @p_mobileNumber,
                 EmailAddress = @p_emailAddress,
                 Address = @p_address,
@@ -303,45 +251,151 @@ BEGIN
                 UpdatedBy = @p_uid
             WHERE CustomerID = @p_customerID;
 
+            IF @@ROWCOUNT = 0
+            BEGIN
+                ROLLBACK TRANSACTION;
+                SET @StartedTransaction = 0;
+                SET @ResultStatusCode = -1;
+                SET @Result = 'Customer was not found';
+                RETURN;
+            END;
+
+            COMMIT TRANSACTION;
+            SET @StartedTransaction = 0;
+            SET @ResultStatusCode = 1;
             SET @Result = 'Customer updated successfully';
+            SELECT @p_customerID AS CustomerID;
         END
 
-        /* ============================================================
-           5. Activate / Deactivate Customer
-           ============================================================ */
-
+        /* 5. Activate / Deactivate Customer */
         ELSE IF @ActionType = 5
         BEGIN
+            IF @p_customerID IS NULL OR @p_customerID <= 0
+            BEGIN
+                SET @ResultStatusCode = -1;
+                SET @Result = 'A valid customer ID is required';
+                RETURN;
+            END;
+
+            IF @p_isActive IS NULL
+            BEGIN
+                SET @ResultStatusCode = -1;
+                SET @Result = 'Active status is required';
+                RETURN;
+            END;
+
+            IF @@TRANCOUNT <> 0
+            BEGIN
+                SET @ResultStatusCode = -1;
+                SET @Result = 'Call this procedure without an existing transaction';
+                RETURN;
+            END;
+
+            BEGIN TRANSACTION;
+            SET @StartedTransaction = 1;
+            EXEC @LockResult = sys.sp_getapplock
+                @Resource = N'ParkingV2Configuration',
+                @LockMode = N'Exclusive',
+                @LockOwner = N'Transaction',
+                @LockTimeout = 10000;
+
+            IF @LockResult < 0
+            BEGIN
+                ROLLBACK TRANSACTION;
+                SET @StartedTransaction = 0;
+                SET @ResultStatusCode = -1;
+                SET @Result = 'Customer management is busy. Please retry';
+                RETURN;
+            END;
+
+            IF NOT EXISTS
+            (
+                SELECT 1 FROM dbo.PARKING_USER WITH (HOLDLOCK)
+                WHERE UserID = @p_uid
+                  AND UserRole = 'A' AND ActiveStatus = 1
+            )
+            BEGIN
+                ROLLBACK TRANSACTION;
+                SET @StartedTransaction = 0;
+                SET @ResultStatusCode = -1;
+                SET @Result = 'An active administrator is required';
+                RETURN;
+            END;
+
+            IF NOT EXISTS
+            (
+                SELECT 1 FROM dbo.PARKING_CUSTOMER WITH (UPDLOCK, HOLDLOCK)
+                WHERE CustomerID = @p_customerID
+            )
+            BEGIN
+                ROLLBACK TRANSACTION;
+                SET @StartedTransaction = 0;
+                SET @ResultStatusCode = -1;
+                SET @Result = 'Customer was not found';
+                RETURN;
+            END;
+
+            IF @p_isActive = 0 AND
+            (
+                EXISTS
+                (
+                    SELECT 1 FROM dbo.PARKING_CUSTOMER_VEHICLE
+                    WHERE CustomerID = @p_customerID AND ActiveStatus = 1
+                )
+                OR EXISTS
+                (
+                    SELECT 1 FROM dbo.PARKING_MONTHLY_CONTRACT
+                    WHERE CustomerID = @p_customerID AND ContractStatus = 'ACTIVE'
+                )
+            )
+            BEGIN
+                ROLLBACK TRANSACTION;
+                SET @StartedTransaction = 0;
+                SET @ResultStatusCode = -1;
+                SET @Result =
+                    'Deactivate the customer vehicles and resolve active monthly contracts before deactivating this customer';
+                RETURN;
+            END;
+
+            SET @Now = SYSUTCDATETIME();
             UPDATE dbo.PARKING_CUSTOMER
-            SET
-                ActiveStatus = @p_isActive,
+            SET ActiveStatus = @p_isActive,
                 UpdatedAt = @Now,
                 UpdatedBy = @p_uid
             WHERE CustomerID = @p_customerID;
 
+            IF @@ROWCOUNT = 0
+            BEGIN
+                ROLLBACK TRANSACTION;
+                SET @StartedTransaction = 0;
+                SET @ResultStatusCode = -1;
+                SET @Result = 'Customer was not found';
+                RETURN;
+            END;
+
+            COMMIT TRANSACTION;
+            SET @StartedTransaction = 0;
+            SET @ResultStatusCode = 1;
             SET @Result =
-                CASE
-                    WHEN @p_isActive = 1
-                        THEN 'Customer activated successfully'
-                    ELSE 'Customer deactivated successfully'
-                END;
+                CASE WHEN @p_isActive = 1
+                     THEN 'Customer activated successfully'
+                     ELSE 'Customer deactivated successfully' END;
+            SELECT @p_customerID AS CustomerID;
+        END
+
+        /* Invalid Action */
+        ELSE
+        BEGIN
+            SET @ResultStatusCode = -1;
+            SET @Result = 'Invalid action type';
         END;
-
-        COMMIT TRANSACTION;
-        SET @StartedTransaction = 0;
-
-        SET @ResultStatusCode = 1;
-
-        SELECT @p_customerID AS CustomerID;
-
     END TRY
     BEGIN CATCH
         IF @StartedTransaction = 1 AND XACT_STATE() <> 0
             ROLLBACK TRANSACTION;
 
         SET @ResultStatusCode = -1;
-        SET @Result =
-            'An error occurred while processing customer details';
+        SET @Result = 'An error occurred while processing customer details';
         SET @ExceptionMessage = ERROR_MESSAGE();
     END CATCH;
 END;
