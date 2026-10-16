@@ -59,9 +59,9 @@ CREATE TABLE dbo.VPMS_APP_SETTINGS
 
 GO
 
-INSERT dbo.PARKING_APP_SETTINGS
+INSERT dbo.VPMS_APP_SETTINGS
 (
-    VPS_SETTINGS_ID,
+    
     VPS_FACILITY_NAME,
     VPS_RECEIPT_MESSAGE,
     VPS_DAILY_THRESHOLD_HOURS,
@@ -69,10 +69,15 @@ INSERT dbo.PARKING_APP_SETTINGS
 )
 VALUES
 (
-    1,
+    
     N'Vehicle Parking',
     N'Thank you for parking with us.',
     6,
     NULL
 );
 GO
+
+
+
+
+
